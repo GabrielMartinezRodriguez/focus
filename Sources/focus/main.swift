@@ -2,8 +2,13 @@ import Foundation
 
 // MARK: - Configuración
 
-/// Apps que se cierran al entrar en foco (y se reabren al salir).
-let appsToClose = ["Slack", "Telegram", "WhatsApp", "Mail"]
+/// Apps de distracción que se cierran al entrar en foco (y se reabren al salir).
+///
+/// IMPORTANTE: aquí NO van las apps de mensajería que vigila el centinela
+/// (Slack/WhatsApp/Telegram). Esas deben seguir abiertas para que sigan registrando
+/// notificaciones en macOS — No Molestar las silencia y el centinela las tría.
+/// Cerrarlas dejaría al centinela ciego.
+let appsToClose: [String] = []
 
 /// Fichero donde se guarda el estado de la sesión activa.
 let stateFile = FileManager.default.homeDirectoryForCurrentUser
