@@ -2,13 +2,17 @@ import Foundation
 
 // MARK: - Configuración
 
-/// Apps de distracción que se cierran al entrar en foco (y se reabren al salir).
+/// Apps de distracción que se cierran del todo al entrar en foco (y se reabren al salir).
 ///
 /// IMPORTANTE: aquí NO van las apps de mensajería que vigila el centinela
-/// (Slack/WhatsApp/Telegram). Esas deben seguir abiertas para que sigan registrando
-/// notificaciones en macOS — No Molestar las silencia y el centinela las tría.
-/// Cerrarlas dejaría al centinela ciego.
+/// (Slack/WhatsApp/Telegram). Esas deben seguir corriendo para que sigan registrando
+/// notificaciones en macOS — cerrarlas dejaría al centinela ciego.
 let appsToClose: [String] = []
+
+/// Apps de mensajería: se OCULTAN (no se cierran) al entrar en foco. Siguen corriendo y
+/// registrando notificaciones —el centinela las tría— pero sus ventanas desaparecen de la
+/// vista y No Molestar las silencia. Se vuelven a mostrar al salir.
+let appsToHide = ["Slack", "Telegram", "WhatsApp", "Mail"]
 
 /// Fichero donde se guarda el estado de la sesión activa.
 let stateFile = FileManager.default.homeDirectoryForCurrentUser
@@ -189,6 +193,7 @@ struct Session: Codable {
     var startedAt: Date
     var minutes: Int?      // nil = sin temporizador
     var closedApps: [String]
+    var hiddenApps: [String]
     var timerPid: Int32?
     var watchPid: Int32?
     var dockWasHidden: Bool
@@ -410,12 +415,23 @@ func enterFocus(minutes: Int?, task: String) {
 
     print("🧘 Entrando en modo foco" + (task.isEmpty ? "" : ": \(task)"))
 
-    // 1. Cerrar apps de mensajería (recordando cuáles estaban abiertas)
+    // 1. Cerrar apps de distracción (recordando cuáles estaban abiertas para reabrirlas)
     var closed: [String] = []
     for app in appsToClose where isRunning(app) {
         osascript("tell application \"\(app)\" to quit")
         closed.append(app)
         print("   ✕ \(app) cerrada")
+    }
+
+    // 1a. Ocultar apps de mensajería: siguen corriendo (el centinela las vigila) pero
+    //     sus ventanas desaparecen de la vista.
+    var hidden: [String] = []
+    for app in appsToHide where isRunning(app) {
+        osascript("tell application \"System Events\" to set visible of process \"\(app)\" to false")
+        hidden.append(app)
+    }
+    if !hidden.isEmpty {
+        print("   ◌ \(hidden.joined(separator: ", ")) ocultas (siguen vigiladas)")
     }
 
     // 1b. Con tarea declarada: limpieza inteligente del resto del workspace.
@@ -457,7 +473,7 @@ func enterFocus(minutes: Int?, task: String) {
     }
 
     saveSession(Session(task: task, startedAt: Date(), minutes: minutes,
-                        closedApps: closed, timerPid: timerPid, watchPid: nil,
+                        closedApps: closed, hiddenApps: hidden, timerPid: timerPid, watchPid: nil,
                         dockWasHidden: dockWasHidden, menuBarWasHidden: menuBarWasHidden))
 
     // 5. Centinela: vigila Slack/WhatsApp/Telegram y solo interrumpe por lo crítico
@@ -509,6 +525,14 @@ func exitFocus() {
     for app in session.closedApps {
         shell("open -gja \"\(app)\"")
         print("   ↩︎ \(app) reabierta")
+    }
+
+    // Volver a mostrar las apps de mensajería que se ocultaron
+    for app in session.hiddenApps where isRunning(app) {
+        osascript("tell application \"System Events\" to set visible of process \"\(app)\" to true")
+    }
+    if !session.hiddenApps.isEmpty {
+        print("   ↩︎ \(session.hiddenApps.joined(separator: ", ")) visibles de nuevo")
     }
 
     clearSession()
