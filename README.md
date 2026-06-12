@@ -44,6 +44,21 @@ cp .focusrc.example ~/.focusrc
 $EDITOR ~/.focusrc
 ```
 
+### Optional: HazeOver (window dimming)
+
+The "dim everything but the active window" step is powered by
+[HazeOver](https://hazeover.com) ($4.99, one-time on the Mac App Store), driven through its
+AppleScript interface:
+
+```applescript
+tell application "HazeOver" to set enabled to true   -- on session start
+tell application "HazeOver" to set enabled to false  -- on session end
+```
+
+It's entirely optional — if HazeOver isn't installed, that step is simply skipped and the
+rest of `focus` works unchanged. HazeOver also exposes `intensity` (0–100), `color`, and
+`duration` via AppleScript if you want to tune the dimming.
+
 ### Optional: Do Not Disturb
 
 macOS doesn't let scripts create Shortcuts, so create two by hand (15 seconds each) in the

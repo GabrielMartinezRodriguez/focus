@@ -53,6 +53,10 @@ func isRunning(_ app: String) -> Bool {
     shell("pgrep -xq \"\(app)\" && echo yes") == "yes"
 }
 
+/// HazeOver (https://hazeover.com) es opcional: si no está instalado, su paso se omite.
+let hazeOverInstalled = !shell("mdfind \"kMDItemCFBundleIdentifier == 'com.pointum.hazeover'\" 2>/dev/null").isEmpty
+    || FileManager.default.fileExists(atPath: "/Applications/HazeOver.app")
+
 // MARK: - Limpieza de workspace con IA
 
 /// Apps que jamás se proponen cerrar, diga lo que diga el LLM.
@@ -426,9 +430,11 @@ func enterFocus(minutes: Int?, task: String) {
     }
     print("   ✕ Dock y barra de menú ocultos")
 
-    // 3. Encender HazeOver
-    osascript("tell application \"HazeOver\" to set enabled to true")
-    print("   ✓ HazeOver encendido")
+    // 3. Encender HazeOver (si está instalado)
+    if hazeOverInstalled {
+        osascript("tell application \"HazeOver\" to set enabled to true")
+        print("   ✓ HazeOver encendido")
+    }
 
     // 3b. Activar No Molestar (si existe el atajo "Focus On")
     if shell("shortcuts list 2>/dev/null | grep -cx 'Focus On'") == "1" {
@@ -482,9 +488,11 @@ func exitFocus() {
     }
     print("   ✓ Dock y barra de menú restaurados")
 
-    // Apagar HazeOver
-    osascript("tell application \"HazeOver\" to set enabled to false")
-    print("   ✓ HazeOver apagado")
+    // Apagar HazeOver (si está instalado)
+    if hazeOverInstalled {
+        osascript("tell application \"HazeOver\" to set enabled to false")
+        print("   ✓ HazeOver apagado")
+    }
 
     // Desactivar No Molestar
     if shell("shortcuts list 2>/dev/null | grep -cx 'Focus Off'") == "1" {
