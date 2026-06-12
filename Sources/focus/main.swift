@@ -224,7 +224,46 @@ let digestFile = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".focus-digest.log")
 
 /// Canales que vigila el centinela (identificadores de bundle en la BD de notificaciones).
-let watchedChannels = ["whatsapp": "WhatsApp", "tinyspeck": "Slack", "telegram": "Telegram"]
+let watchedChannels = ["whatsapp": "WhatsApp", "tinyspeck": "Slack",
+                       "telegram": "Telegram", "com.apple.mail": "Mail"]
+
+/// Lock para que solo un centinela procese a la vez (evita alertas duplicadas).
+let watchLockFile = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".focus-watch.lock")
+
+func pidAlive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 }
+
+func acquireWatchLock() -> Bool {
+    if let txt = try? String(contentsOf: watchLockFile, encoding: .utf8),
+       let pid = Int32(txt.trimmingCharacters(in: .whitespacesAndNewlines)),
+       pid != ProcessInfo.processInfo.processIdentifier, pidAlive(pid) {
+        return false // otro centinela vivo lo tiene
+    }
+    try? "\(ProcessInfo.processInfo.processIdentifier)".write(to: watchLockFile, atomically: true, encoding: .utf8)
+    return true
+}
+
+func releaseWatchLock() {
+    if let txt = try? String(contentsOf: watchLockFile, encoding: .utf8),
+       Int32(txt.trimmingCharacters(in: .whitespacesAndNewlines)) == ProcessInfo.processInfo.processIdentifier {
+        try? FileManager.default.removeItem(at: watchLockFile)
+    }
+}
+
+/// ¿Puede este proceso leer realmente la BD? (TCC puede denegar aunque el fichero exista)
+func canReadNotifDB() -> Bool {
+    Int(runProcess("/usr/bin/sqlite3", [notifDB, "SELECT COUNT(*) FROM record;"])) != nil
+}
+
+/// Pidfile del demonio watchd (vigilante residente).
+let daemonPidFile = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".focus-watchd.pid")
+
+func daemonAlive() -> Bool {
+    guard let txt = try? String(contentsOf: daemonPidFile, encoding: .utf8),
+          let pid = Int32(txt.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+    return pidAlive(pid)
+}
 
 struct Notif {
     let recId: Int64
@@ -243,11 +282,21 @@ func sqlite(_ sql: String) -> [String] {
 }
 
 func watchedAppIds() -> [Int64: String] {
+    // Canales extra opcionales (~/.focus-extra-channels, líneas "substring:Nombre")
+    var channels = watchedChannels
+    let extraFile = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".focus-extra-channels")
+    if let extra = try? String(contentsOf: extraFile, encoding: .utf8) {
+        for line in extra.components(separatedBy: "\n") {
+            let parts = line.components(separatedBy: ":")
+            if parts.count == 2, !parts[0].isEmpty { channels[parts[0].lowercased()] = parts[1] }
+        }
+    }
     var map: [Int64: String] = [:]
     for row in sqlite("SELECT app_id, identifier FROM app;") {
         let cols = row.components(separatedBy: "\u{1F}")
         guard cols.count == 2, let id = Int64(cols[0]) else { continue }
-        for (key, name) in watchedChannels where cols[1].lowercased().contains(key) {
+        for (key, name) in channels where cols[1].lowercased().contains(key) {
             map[id] = name
         }
     }
@@ -297,7 +346,7 @@ func appendDigest(_ line: String) {
 func criticalAlert(summary: String, reason: String) {
     let esc = { (s: String) in s.replacingOccurrences(of: "\"", with: "'") }
     let script = """
-    display alert "🚨 \(esc(summary))" message "\(esc(reason))" as critical buttons {"Visto"} default button "Visto"
+    display alert "🚨 \(esc(summary))" message "\(esc(reason))" as critical buttons {"Visto"} default button "Visto" giving up after 120
     """
     _ = runProcess("/usr/bin/osascript", ["-"], stdin: script)
 }
@@ -336,11 +385,17 @@ func sentinelVerdict(task: String, notifs: [Notif]) -> [(index: Int, summary: St
 
 /// Bucle del centinela: corre mientras exista la sesión.
 func runSentinel() {
-    guard FileManager.default.isReadableFile(atPath: notifDB) else {
-        appendDigest("⚠️ Centinela sin acceso a la BD de notificaciones (falta Acceso total al disco)")
+    let now = { ISO8601DateFormatter().string(from: Date()) }
+    // La lectura puede fallar por TCC aunque el fichero "exista": probamos una consulta real.
+    guard canReadNotifDB() else {
+        // Si hay un demonio watchd vivo, él se encargará — salir en silencio.
+        if daemonAlive() { return }
+        appendDigest("⚠️ [\(now())] Centinela sin acceso a la BD de notificaciones (falta Acceso total al disco para el proceso que lanzó la sesión, y no hay demonio watchd)")
         return
     }
-    try? "".write(to: digestFile, atomically: true, encoding: .utf8)
+    guard acquireWatchLock() else { return } // otro centinela ya vigila esta sesión
+    defer { releaseWatchLock() }
+    appendDigest("👁 [\(now())] Centinela activo (pid \(ProcessInfo.processInfo.processIdentifier))")
     let apps = watchedAppIds()
     var lastRec = maxRecId()
     var pendingIncidents: [(notif: Notif, since: Date)] = []
@@ -401,7 +456,7 @@ func showDigest() {
     for line in lines.suffix(15) { print("      \(line)") }
     let esc = content.replacingOccurrences(of: "\"", with: "'").prefix(1500)
     let script = """
-    display dialog "Mientras estabas en foco:\n\n\(esc)" with title "Focus — resumen de sesión" buttons {"OK"} default button "OK"
+    display dialog "Mientras estabas en foco:\n\n\(esc)" with title "Focus — resumen de sesión" buttons {"OK"} default button "OK" giving up after 600
     """
     _ = runProcess("/usr/bin/osascript", ["-"], stdin: script)
 }
@@ -415,6 +470,9 @@ func enterFocus(minutes: Int?, task: String) {
     }
 
     print("🧘 Entrando en modo foco" + (task.isEmpty ? "" : ": \(task)"))
+
+    // Digest limpio para esta sesión (evita arrastrar avisos de sesiones anteriores)
+    try? "".write(to: digestFile, atomically: true, encoding: .utf8)
 
     // 1. Cerrar apps de distracción (recordando cuáles estaban abiertas para reabrirlas)
     var closed: [String] = []
@@ -583,6 +641,20 @@ case "status":
     showStatus()
 case "watch":
     runSentinel()
+case "watchd":
+    // Demonio residente: vigila para siempre; cuando hay sesión, hace de centinela.
+    // Lánzalo desde un proceso con Acceso total al disco (p. ej. tu terminal):
+    //   nohup focus watchd >/dev/null 2>&1 &
+    guard canReadNotifDB() else {
+        print("✗ watchd sin Acceso total al disco — lánzalo desde una terminal que lo tenga")
+        exit(1)
+    }
+    try? "\(ProcessInfo.processInfo.processIdentifier)".write(to: daemonPidFile, atomically: true, encoding: .utf8)
+    print("👁 watchd vigilando (pid \(ProcessInfo.processInfo.processIdentifier))")
+    while true {
+        if loadSession() != nil { runSentinel() }
+        Thread.sleep(forTimeInterval: 5)
+    }
 case "scan":
     let task = args.dropFirst().joined(separator: " ")
     if task.isEmpty {

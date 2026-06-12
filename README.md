@@ -69,23 +69,31 @@ macOS doesn't let scripts create Shortcuts, so create two by hand (15 seconds ea
 
 `focus` runs them automatically if they exist.
 
-### Permissions
+### Permissions: the `watchd` daemon
 
 The sentinel reads the local macOS notifications database, which requires **Full Disk
-Access** (System Settings → Privacy & Security → Full Disk Access).
+Access** (System Settings → Privacy & Security → Full Disk Access). macOS attributes that
+permission to the *responsible process*, which gets murky for GUI-launched, detached
+subprocesses — grants to a menu-bar app can be silently lost when the app is re-signed.
 
-macOS attributes this permission to the **responsible process** — i.e. *whatever launches
-the session* — so grant it to:
+The robust architecture is the resident **`focus watchd`** daemon: one long-lived process
+that holds the access and watches for sessions, no matter where they're started from
+(CLI or menu-bar app). A lock file guarantees only one sentinel processes notifications.
 
-- **your terminal** (e.g. Ghostty, Terminal, iTerm) if you start sessions with `focus` on
-  the command line, **and/or**
-- **FocusBar.app** if you start sessions from the menu-bar app.
+Set it up once:
 
-If the digest shows `Centinela sin acceso a la BD de notificaciones`, the process you
-launched from is missing this grant.
+1. Grant **Full Disk Access** to the `~/bin/focus` binary (➕ in the Full Disk Access
+   panel → press `Cmd+Shift+G` in the file dialog → type `~/bin/focus`). The install
+   script signs the binary with a stable identity, so the grant survives rebuilds.
+2. Install the launch agent so it starts at login:
 
-> Note: FocusBar is ad-hoc signed, so macOS may ask you to re-grant Full Disk Access after
-> you rebuild and re-sign the app.
+```bash
+cp launchd/es.feynman.focus.watchd.plist ~/Library/LaunchAgents/   # edit the path inside
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/es.feynman.focus.watchd.plist
+```
+
+(Without the daemon, sessions started from a terminal that has Full Disk Access still get
+a working sentinel — the watcher inherits the terminal's grant.)
 
 Nothing leaves your machine except the notification text sent to your local `claude` CLI
 for the urgency judgment.

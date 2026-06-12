@@ -6,10 +6,16 @@ cd "$(dirname "$0")"
 echo "▸ Compilando…"
 swift build -c release
 
-# 1. Comando CLI: symlink (se actualiza solo en cada build)
+# Identidad de firma estable (permite conceder Acceso total al disco una sola vez)
+IDENTITY="${FOCUS_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
+  | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')}"
+
+# 1. Comando CLI: copia firmada (no symlink: la firma estable requiere binario propio)
 mkdir -p ~/bin
-ln -sf "$PWD/.build/release/focus" ~/bin/focus
-echo "✓ Comando 'focus' → ~/bin/focus"
+rm -f ~/bin/focus
+cp .build/release/focus ~/bin/focus
+codesign --force --identifier es.feynman.focus.cli --sign "${IDENTITY:--}" ~/bin/focus >/dev/null 2>&1 || true
+echo "✓ Comando 'focus' → ~/bin/focus (copia firmada)"
 
 # 2. App de barra de menú: copiar el binario fresco al bundle y refirmar
 APP=~/Applications/FocusBar.app
@@ -17,10 +23,6 @@ if [ -d "$APP" ]; then
   pkill -x FocusBar 2>/dev/null || true
   sleep 1
   cp .build/release/FocusBar "$APP/Contents/MacOS/FocusBar"
-  # Firma con identidad estable si existe (así Acceso total al disco sobrevive a recompilados);
-  # si no, ad-hoc. Puedes fijarla con: export FOCUS_SIGN_IDENTITY="Apple Development: ..."
-  IDENTITY="${FOCUS_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
-    | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')}"
   codesign --force --deep --sign "${IDENTITY:--}" "$APP" >/dev/null 2>&1 || \
     codesign --force --sign - "$APP" >/dev/null 2>&1 || true
   open "$APP"
