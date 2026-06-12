@@ -198,6 +198,7 @@ struct Session: Codable {
     var watchPid: Int32?
     var dockWasHidden: Bool
     var menuBarWasHidden: Bool
+    var dockDelayBefore: String?   // autohide-delay previo ("" si no estaba definido)
 }
 
 func loadSession() -> Session? {
@@ -444,12 +445,15 @@ func enterFocus(minutes: Int?, task: String) {
     let dockWasHidden = shell("defaults read com.apple.dock autohide 2>/dev/null") == "1"
     let menuBarWasHidden = shell("osascript -e 'tell application \"System Events\" to get autohide menu bar of dock preferences'") == "true"
     if !dockWasHidden {
-        shell("defaults write com.apple.dock autohide -bool true && killall Dock")
+        shell("defaults write com.apple.dock autohide -bool true")
     }
+    // Retardo enorme: el Dock no aparece ni rozando el borde con el ratón
+    let dockDelayBefore = shell("defaults read com.apple.dock autohide-delay 2>/dev/null")
+    shell("defaults write com.apple.dock autohide-delay -float 1000 && killall Dock")
     if !menuBarWasHidden {
         osascript("tell application \"System Events\" to set autohide menu bar of dock preferences to true")
     }
-    print("   ✕ Dock y barra de menú ocultos")
+    print("   ✕ Dock sellado y barra de menú oculta")
 
     // 3. Encender HazeOver (si está instalado)
     if hazeOverInstalled {
@@ -474,7 +478,8 @@ func enterFocus(minutes: Int?, task: String) {
 
     saveSession(Session(task: task, startedAt: Date(), minutes: minutes,
                         closedApps: closed, hiddenApps: hidden, timerPid: timerPid, watchPid: nil,
-                        dockWasHidden: dockWasHidden, menuBarWasHidden: menuBarWasHidden))
+                        dockWasHidden: dockWasHidden, menuBarWasHidden: menuBarWasHidden,
+                        dockDelayBefore: dockDelayBefore))
 
     // 5. Centinela: vigila Slack/WhatsApp/Telegram y solo interrumpe por lo crítico
     let binary = CommandLine.arguments[0]
@@ -502,8 +507,14 @@ func exitFocus() {
 
     // Restaurar Dock y barra de menú a como estaban antes de la sesión
     if !session.dockWasHidden {
-        shell("defaults write com.apple.dock autohide -bool false && killall Dock")
+        shell("defaults write com.apple.dock autohide -bool false")
     }
+    if let delay = session.dockDelayBefore, !delay.isEmpty {
+        shell("defaults write com.apple.dock autohide-delay -float \(delay)")
+    } else {
+        shell("defaults delete com.apple.dock autohide-delay 2>/dev/null")
+    }
+    shell("killall Dock")
     if !session.menuBarWasHidden {
         osascript("tell application \"System Events\" to set autohide menu bar of dock preferences to false")
     }
