@@ -17,7 +17,12 @@ if [ -d "$APP" ]; then
   pkill -x FocusBar 2>/dev/null || true
   sleep 1
   cp .build/release/FocusBar "$APP/Contents/MacOS/FocusBar"
-  codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+  # Firma con identidad estable si existe (así Acceso total al disco sobrevive a recompilados);
+  # si no, ad-hoc. Puedes fijarla con: export FOCUS_SIGN_IDENTITY="Apple Development: ..."
+  IDENTITY="${FOCUS_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')}"
+  codesign --force --deep --sign "${IDENTITY:--}" "$APP" >/dev/null 2>&1 || \
+    codesign --force --sign - "$APP" >/dev/null 2>&1 || true
   open "$APP"
   echo "✓ FocusBar.app actualizada y relanzada"
 else
