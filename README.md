@@ -72,7 +72,21 @@ macOS doesn't let scripts create Shortcuts, so create two by hand (15 seconds ea
 ### Permissions
 
 The sentinel reads the local macOS notifications database, which requires **Full Disk
-Access** for your terminal (System Settings → Privacy & Security → Full Disk Access).
+Access** (System Settings → Privacy & Security → Full Disk Access).
+
+macOS attributes this permission to the **responsible process** — i.e. *whatever launches
+the session* — so grant it to:
+
+- **your terminal** (e.g. Ghostty, Terminal, iTerm) if you start sessions with `focus` on
+  the command line, **and/or**
+- **FocusBar.app** if you start sessions from the menu-bar app.
+
+If the digest shows `Centinela sin acceso a la BD de notificaciones`, the process you
+launched from is missing this grant.
+
+> Note: FocusBar is ad-hoc signed, so macOS may ask you to re-grant Full Disk Access after
+> you rebuild and re-sign the app.
+
 Nothing leaves your machine except the notification text sent to your local `claude` CLI
 for the urgency judgment.
 
