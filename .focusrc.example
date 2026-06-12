@@ -1,0 +1,17 @@
+# ~/.focusrc — reglas personales del centinela (copia este fichero a ~/.focusrc y edítalo)
+#
+# Texto libre en lenguaje natural. Se inyecta en el prompt que decide qué notificaciones
+# justifican romper tu foco. Sé específico: nombres de personas, canales y grupos concretos.
+
+INTERRUMPE (criterios estrictos):
+- Mensaje directo de <tu jefe / socio> → casi siempre, salvo charla casual.
+- Canal/grupo de <tus clientes>: si hay queja, error o alguien esperando respuesta.
+- Grupo de <familia>: SOLO urgencia real (salud, accidente). Fotos/planes/memes → retén.
+- Producción caída o errores graves no auto-resueltos que afecten a clientes.
+- Alguien bloqueado esperando tu respuesta para poder trabajar.
+
+RETÉN (va al resumen de fin de sesión, NO interrumpe):
+- Saludos, humor, stickers, reacciones, emojis.
+- Conversación general de canales.
+- Alertas auto-resueltas o informativas, bots, newsletters.
+- Cualquier cosa que pueda esperar una hora sin consecuencias reales.
