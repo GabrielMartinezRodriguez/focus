@@ -550,7 +550,7 @@ func enterFocus(minutes: Int?, task: String) {
     print("✅ Foco activo. `focus stop` para terminar antes.")
 }
 
-func exitFocus() {
+func exitFocus(showDigestDialog: Bool = true) {
     guard let session = loadSession() else {
         print("No hay ninguna sesión activa.")
         return
@@ -608,7 +608,7 @@ func exitFocus() {
 
     // Parar el centinela y mostrar lo retenido
     if let pid = session.watchPid { shell("kill \(pid) 2>/dev/null") }
-    showDigest()
+    if showDigestDialog { showDigest() }
 
     let elapsed = Int(Date().timeIntervalSince(session.startedAt) / 60)
     print("✅ Sesión terminada (\(elapsed) min de foco).")
@@ -636,7 +636,9 @@ case "start":
     let task = args.dropFirst(minutes != nil ? 2 : 1).joined(separator: " ")
     enterFocus(minutes: minutes, task: task)
 case "stop":
-    exitFocus()
+    // --quiet omite el diálogo de digest (lo usa FocusBar al cerrarse, para no
+    // bloquear la terminación de la app con un modal).
+    exitFocus(showDigestDialog: !args.contains("--quiet"))
 case "status":
     showStatus()
 case "watch":
